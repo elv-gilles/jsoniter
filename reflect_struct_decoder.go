@@ -1045,13 +1045,26 @@ func (decoder *tenFieldsStructDecoder) Decode(ptr unsafe.Pointer, iter *Iterator
 }
 
 type structFieldDecoder struct {
+	structTyp    reflect2.Type
 	field        reflect2.StructField
 	fieldDecoder ValDecoder
 }
 
 func (decoder *structFieldDecoder) Decode(ptr unsafe.Pointer, iter *Iterator) {
 	fieldPtr := decoder.field.UnsafeGet(ptr)
-	decoder.fieldDecoder.Decode(fieldPtr, iter)
+	dyn, ok := decoder.fieldDecoder.(*typeMapping)
+	if ok {
+		dyn.DynDecode(
+			&mappingCtx{
+				contType: decoder.structTyp,
+				contPtr:  ptr,
+				field:    decoder.field,
+			},
+			fieldPtr,
+			iter)
+	} else {
+		decoder.fieldDecoder.Decode(fieldPtr, iter)
+	}
 	if iter.Error != nil && iter.Error != io.EOF {
 		iter.Error = fmt.Errorf("%s: %s", decoder.field.Name(), iter.Error.Error())
 	}

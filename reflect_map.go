@@ -168,27 +168,86 @@ func (decoder *mapDecoder) Decode(ptr unsafe.Pointer, iter *Iterator) {
 		return
 	}
 	iter.unreadByte()
-	key := decoder.keyType.UnsafeNew()
-	decoder.keyDecoder.Decode(key, iter)
+
+	var key unsafe.Pointer
+	var keyObj interface{}
+
+	var ok bool
+	var dynKey *typeMapping
+	if dynKey, ok = decoder.keyDecoder.(*typeMapping); ok {
+		o, err := dynKey.DynDecodeKey(iter)
+		if err != nil {
+			iter.ReportError("ReadMapCB", err.Error())
+			return
+		}
+		keyObj = o
+	} else {
+		key = decoder.keyType.UnsafeNew()
+		decoder.keyDecoder.Decode(key, iter)
+	}
+
 	c = iter.nextToken()
 	if c != ':' {
 		iter.ReportError("ReadMapCB", "expect : after object field, but found "+string([]byte{c}))
 		return
 	}
 	elem := decoder.elemType.UnsafeNew()
-	decoder.elemDecoder.Decode(elem, iter)
-	decoder.mapType.UnsafeSetIndex(ptr, key, elem)
+
+	var dynVal *typeMapping
+	var decCtx *mappingCtx
+	if dynVal, ok = decoder.elemDecoder.(*typeMapping); ok {
+		decCtx = &mappingCtx{
+			contType:   decoder.mapType,
+			contPtr:    ptr,
+			mapKeyType: decoder.keyType,
+			mapKey:     key,
+		}
+		dynVal.DynDecode(decCtx, elem, iter)
+	} else {
+		decoder.elemDecoder.Decode(elem, iter)
+		if keyObj != nil {
+			mapElem := reflect.ValueOf(decoder.mapType.PackEFace(ptr)).Elem()
+			keyElem := reflect.ValueOf(keyObj).Elem() // map key must not be pointer
+			newVal := reflect.ValueOf(decoder.elemType.UnsafeIndirect(elem))
+			mapElem.SetMapIndex(keyElem, newVal)
+		} else {
+			decoder.mapType.UnsafeSetIndex(ptr, key, elem)
+		}
+	}
 	for c = iter.nextToken(); c == ','; c = iter.nextToken() {
-		key := decoder.keyType.UnsafeNew()
-		decoder.keyDecoder.Decode(key, iter)
+		var key unsafe.Pointer
+		var keyObj interface{}
+		if dynKey != nil {
+			o, err := dynKey.DynDecodeKey(iter)
+			if err != nil {
+				iter.ReportError("ReadMapCB", err.Error())
+			}
+			keyObj = o
+			//key = reflect2.PtrOf(o)
+		} else {
+			key = decoder.keyType.UnsafeNew()
+			decoder.keyDecoder.Decode(key, iter)
+		}
 		c = iter.nextToken()
 		if c != ':' {
 			iter.ReportError("ReadMapCB", "expect : after object field, but found "+string([]byte{c}))
 			return
 		}
 		elem := decoder.elemType.UnsafeNew()
-		decoder.elemDecoder.Decode(elem, iter)
-		decoder.mapType.UnsafeSetIndex(ptr, key, elem)
+		if dynVal != nil && decCtx != nil {
+			decCtx.mapKey = key
+			dynVal.DynDecode(decCtx, elem, iter)
+		} else {
+			decoder.elemDecoder.Decode(elem, iter)
+			if keyObj != nil {
+				mapElem := reflect.ValueOf(decoder.mapType.PackEFace(ptr)).Elem()
+				keyElem := reflect.ValueOf(keyObj).Elem() // map key must not be pointer
+				newVal := reflect.ValueOf(decoder.elemType.UnsafeIndirect(elem))
+				mapElem.SetMapIndex(keyElem, newVal)
+			} else {
+				decoder.mapType.UnsafeSetIndex(ptr, key, elem)
+			}
+		}
 	}
 	if c != '}' {
 		iter.ReportError("ReadMapCB", `expect }, but found `+string([]byte{c}))

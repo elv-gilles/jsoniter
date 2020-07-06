@@ -352,7 +352,7 @@ func describeStruct(ctx *ctx, typ reflect2.Type) *StructDescriptor {
 					binding.levels = append([]int{i}, binding.levels...)
 					omitempty := binding.Encoder.(*structFieldEncoder).omitempty
 					binding.Encoder = &structFieldEncoder{field, binding.Encoder, omitempty}
-					binding.Decoder = &structFieldDecoder{field, binding.Decoder}
+					binding.Decoder = &structFieldDecoder{structType, field, binding.Decoder}
 					embeddedBindings = append(embeddedBindings, binding)
 				}
 				continue
@@ -366,7 +366,7 @@ func describeStruct(ctx *ctx, typ reflect2.Type) *StructDescriptor {
 						binding.Encoder = &dereferenceEncoder{binding.Encoder}
 						binding.Encoder = &structFieldEncoder{field, binding.Encoder, omitempty}
 						binding.Decoder = &dereferenceDecoder{ptrType.Elem(), binding.Decoder}
-						binding.Decoder = &structFieldDecoder{field, binding.Decoder}
+						binding.Decoder = &structFieldDecoder{structType, field, binding.Decoder}
 						embeddedBindings = append(embeddedBindings, binding)
 					}
 					continue
@@ -457,7 +457,7 @@ func processTags(structDescriptor *StructDescriptor, cfg *frozenConfig) {
 				}
 			}
 		}
-		binding.Decoder = &structFieldDecoder{binding.Field, binding.Decoder}
+		binding.Decoder = &structFieldDecoder{structDescriptor.Type, binding.Field, binding.Decoder}
 		binding.Encoder = &structFieldEncoder{binding.Field, binding.Encoder, shouldOmitEmpty}
 	}
 }

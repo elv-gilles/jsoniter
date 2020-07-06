@@ -83,14 +83,33 @@ func (decoder *sliceDecoder) doDecode(ptr unsafe.Pointer, iter *Iterator) {
 	iter.unreadByte()
 	sliceType.UnsafeGrow(ptr, 1)
 	elemPtr := sliceType.UnsafeGetIndex(ptr, 0)
-	decoder.elemDecoder.Decode(elemPtr, iter)
+
+	dyn, ok := decoder.elemDecoder.(*typeMapping)
+	var decCtx *mappingCtx
+
+	if ok {
+		decCtx = &mappingCtx{
+			contType:   sliceType,
+			contPtr:    ptr,
+			sliceIndex: 0,
+		}
+		dyn.DynDecode(decCtx, elemPtr, iter)
+	} else {
+		decoder.elemDecoder.Decode(elemPtr, iter)
+	}
 	length := 1
 	for c = iter.nextToken(); c == ','; c = iter.nextToken() {
 		idx := length
 		length += 1
 		sliceType.UnsafeGrow(ptr, length)
 		elemPtr = sliceType.UnsafeGetIndex(ptr, idx)
-		decoder.elemDecoder.Decode(elemPtr, iter)
+		if dyn != nil {
+			// decCtx can't be nil
+			decCtx.sliceIndex = idx
+			dyn.DynDecode(decCtx, elemPtr, iter)
+		} else {
+			decoder.elemDecoder.Decode(elemPtr, iter)
+		}
 	}
 	if c != ']' {
 		iter.ReportError("decode slice", "expect ], but found "+string([]byte{c}))

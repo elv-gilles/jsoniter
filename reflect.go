@@ -71,6 +71,10 @@ func (iter *Iterator) ReadVal(obj interface{}) {
 		}
 		decoder = iter.cfg.DecoderOf(typ)
 	}
+	if decoder == nil {
+		iter.ReportError("ReadVal", "no decoder found")
+		return
+	}
 	ptr := reflect2.PtrOf(obj)
 	if ptr == nil {
 		iter.ReportError("ReadVal", "can not read into nil pointer")
